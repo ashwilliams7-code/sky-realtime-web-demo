@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050608">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Sky Realtime: a private, zero-credit interactive web demo of the First Light voice observatory interface.">
+  <meta property="og:title" content="Sky Realtime · First Light Web Demo">
+  <meta property="og:description" content="Explore the First Light voice observatory interface. No microphone, network, account, or API credits required.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="favicon.svg">
+  <meta name="twitter:card" content="summary">
+  <title>Sky Realtime · First Light Web Demo</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#primary-control">Skip to demo controls</a>
+
+  <main id="app" class="app" data-phase="idle">
+    <section id="conversation-screen" class="conversation-screen" aria-label="Sky Realtime web demo">
+      <header class="status-header">
+        <div class="status-readout" aria-live="polite">
+          <span id="status-dot" class="status-dot" aria-hidden="true"></span>
+          <span id="header-status">REALTIME 2.1 · READY</span>
+        </div>
+        <span class="web-demo-stamp">WEB DEMO</span>
+      </header>
+
+      <div class="privacy-note" role="note">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 19 6v5.3c0 4.7-2.8 8.3-7 10-4.2-1.7-7-5.3-7-10V6l7-3.2Z"/><path d="m8.7 12 2.1 2.1 4.6-4.7"/></svg>
+        <span>No audio or data leaves this device.</span>
+      </div>
+
+      <div class="conversation-stage">
+        <div id="orb-container" class="orb-container" data-visual-state="idle">
+          <canvas id="living-orb" role="img" aria-label="Sky is ready"></canvas>
+        </div>
+
+        <div id="transcript" class="transcript" aria-live="polite" aria-atomic="false">
+          <div id="phase-label" class="phase-label">READY</div>
+          <div class="caption-stack">
+            <p id="caption-oldest" class="receding-caption oldest" aria-hidden="true"></p>
+            <p id="caption-recent" class="receding-caption recent" aria-hidden="true"></p>
+            <p id="caption" class="caption">Tap Start when you’re ready.</p>
+          </div>
+        </div>
+      </div>
+
+      <button id="latency-handle" class="latency-handle" type="button" aria-label="Open Latency Lab" aria-haspopup="dialog" aria-controls="latency-lab">
+        <span class="handle-line" aria-hidden="true"></span>
+        <span><svg viewBox="0 0 12 8" aria-hidden="true"><path d="m1 7 5-5 5 5"/></svg>LATENCY LAB</span>
+      </button>
+
+      <nav class="controls" aria-label="Demo controls">
+        <button id="mic-control" class="control control-round" type="button" disabled aria-label="Mute microphone" aria-pressed="false">
+          <span id="mic-icon" aria-hidden="true"></span>
+        </button>
+
+        <button id="settings-control" class="control model-control" type="button" aria-label="Model and voice settings, current model Realtime 2.1" aria-haspopup="dialog" aria-controls="settings-sheet">
+          <span class="control-kicker">MODEL</span>
+          <strong id="model-short">2.1</strong>
+        </button>
+
+        <div class="primary-stack">
+          <button id="primary-control" class="primary-control" type="button" aria-label="Start demo session">
+            <span id="primary-icon" aria-hidden="true"></span>
+          </button>
+          <span id="primary-hint" class="primary-hint">START DEMO</span>
+        </div>
+      </nav>
+    </section>
+  </main>
+
+  <div id="settings-backdrop" class="modal-backdrop" hidden></div>
+  <section id="settings-sheet" class="settings-sheet sheet" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <div class="sheet-grabber" aria-hidden="true"></div>
+    <header class="sheet-header">
+      <div>
+        <p class="instrument-label">SKY OBSERVATORY · SETTINGS</p>
+        <h1 id="settings-title">Sky</h1>
+      </div>
+      <button id="settings-close" class="text-button" type="button">Done</button>
+    </header>
+
+    <div class="sheet-scroll">
+      <section class="settings-section demo-callout" aria-labelledby="demo-heading">
+        <h2 id="demo-heading">WEB DEMO</h2>
+        <div class="setting-summary">
+          <span class="setting-icon" aria-hidden="true">◇</span>
+          <div><strong>On-device interface simulation</strong><p>This deterministic demo never opens a voice session, makes a network request, uses API credits, or asks for microphone access.</p></div>
+        </div>
+      </section>
+
+      <fieldset class="settings-section choice-list">
+        <legend>REALTIME MODEL</legend>
+        <label><span><strong>Realtime 2.1</strong><small>Current low-latency voice candidate</small></span><input type="radio" name="model" value="realtime21" checked></label>
+        <label><span><strong>Realtime GA</strong><small>General-availability realtime baseline</small></span><input type="radio" name="model" value="realtimeGA"></label>
+        <label><span><strong>GPT-4o Preview</strong><small>Earlier preview baseline</small></span><input type="radio" name="model" value="gpt4oRealtimePreview"></label>
+      </fieldset>
+
+      <fieldset class="settings-section choice-list">
+        <legend>VOICE</legend>
+        <label><span><strong>OpenAI Realtime</strong><small>Native realtime voice profile</small></span><input type="radio" name="voice" value="openAIRealtime" checked></label>
+        <label><span><strong>Sky Voice</strong><small>Custom Sky voice profile</small></span><input type="radio" name="voice" value="skyCustom"></label>
+      </fieldset>
+
+      <section class="settings-section" aria-labelledby="tools-heading">
+        <h2 id="tools-heading">TOOLS</h2>
+        <label class="toggle-row" for="tools-toggle"><span><strong>Allow protected tools</strong><small>Visual setting only; this web demo cannot run tools.</small></span><input id="tools-toggle" type="checkbox" role="switch"></label>
+      </section>
+
+      <section class="settings-section privacy-section" aria-labelledby="privacy-heading">
+        <h2 id="privacy-heading">PRIVACY</h2>
+        <p><span aria-hidden="true">—</span> No microphone permission is requested</p>
+        <p><span aria-hidden="true">—</span> No audio, transcript, setting, or identifier is stored</p>
+        <p><span aria-hidden="true">—</span> Voice alone never approves actions</p>
+      </section>
+
+      <section class="settings-section" aria-labelledby="preview-heading">
+        <h2 id="preview-heading">DEMO CHECK</h2>
+        <p class="section-note">Preview the recoverable error treatment without making a connection.</p>
+        <div class="button-row">
+          <button id="preview-error" class="outline-button" type="button">Connection issue</button>
+          <button id="reset-demo" class="outline-button" type="button">Reset demo</button>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <section id="latency-lab" class="latency-lab" role="dialog" aria-modal="true" aria-labelledby="latency-title" hidden>
+    <div class="lab-scroll">
+      <header class="lab-header">
+        <div>
+          <p class="instrument-label">SKY OBSERVATORY · 01</p>
+          <h1 id="latency-title">Latency Lab</h1>
+        </div>
+        <button id="latency-close" class="icon-button" type="button" aria-label="Close Latency Lab">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+        <div class="lab-subtitle"><span aria-hidden="true"></span>ONE CLOCK · THREE VOICE PIPELINES</div>
+      </header>
+
+      <section class="lab-zone" aria-labelledby="race-title">
+        <div class="zone-header"><span>01</span><h2 id="race-title">THE RACE</h2><small>LATEST VALID TURN</small></div>
+        <div class="race-card">
+          <div class="race-legend" aria-hidden="true"><span>┃ RSP</span><span>○ TOKEN</span><span>● AUDIO</span><span>◇ DONE</span><em>AUDIO · MS</em></div>
+          <div class="race-axis" aria-hidden="true"><span>0</span><span>500</span><span>1000 ms</span></div>
+          <div class="race-row" style="--trail:44.6%;--rsp:16.6%;--token:33.6%;--audio:44.6%;--provider:#f4f6fa">
+            <div class="race-name"><strong>2.1</strong><small>RUN 5</small></div><div class="race-track"><i class="trail"></i><i class="mark rsp"></i><i class="mark token"></i><i class="mark audio"></i><i class="interrupt-mark"></i></div><output>446</output>
+          </div>
+          <div class="race-row" style="--trail:58.9%;--rsp:30.9%;--token:47.9%;--audio:58.9%;--provider:#e8b15a">
+            <div class="race-name"><strong>GA</strong><small>RUN 5</small></div><div class="race-track"><i class="trail"></i><i class="mark rsp"></i><i class="mark token"></i><i class="mark audio"></i><i class="interrupt-mark"></i></div><output>589</output>
+          </div>
+          <div class="race-row" style="--trail:75.9%;--rsp:47.9%;--token:64.9%;--audio:75.9%;--provider:#9db89a">
+            <div class="race-name"><strong>4O</strong><small>RUN 5</small></div><div class="race-track"><i class="trail"></i><i class="mark rsp"></i><i class="mark token"></i><i class="mark audio"></i><i class="interrupt-mark"></i></div><output>759</output>
+          </div>
+        </div>
+      </section>
+
+      <section class="lab-zone" aria-labelledby="plates-title">
+        <div class="zone-header"><span>02</span><h2 id="plates-title">PLATES</h2><small>MEDIAN · P95</small></div>
+        <div class="plates">
+          <article class="instrument-plate winner" style="--provider:#f4f6fa;--med:54%;--p95:62%" aria-label="Realtime 2.1: first audio median 446 milliseconds, p95 515 milliseconds, first of three.">
+            <header><span><i></i>REALTIME 2.1</span><em>1ST OF 3 · FIRST AUDIO</em></header>
+            <div class="plate-metrics"><div class="emphasis"><small>FIRST AUDIO</small><strong>446 <i>ms</i></strong></div><div><small>FIRST TOKEN</small><strong>336 <i>ms</i></strong></div><div><small>COMPLETE</small><strong>2105 <i>ms</i></strong></div></div>
+            <div class="percentile"><span class="median"></span><span class="p95"></span></div><footer><span>● MED 446 ms</span><span>○ P95 515 ms</span></footer>
+          </article>
+          <article class="instrument-plate" style="--provider:#e8b15a;--med:71%;--p95:78%" aria-label="Realtime GA: first audio median 589 milliseconds, p95 641 milliseconds.">
+            <header><span><i></i>REALTIME GA</span><em>5 RUNS</em></header>
+            <div class="plate-metrics"><div class="emphasis"><small>FIRST AUDIO</small><strong>589 <i>ms</i></strong></div><div><small>FIRST TOKEN</small><strong>479 <i>ms</i></strong></div><div><small>COMPLETE</small><strong>2240 <i>ms</i></strong></div></div>
+            <div class="percentile"><span class="median"></span><span class="p95"></span></div><footer><span>● MED 589 ms</span><span>○ P95 641 ms</span></footer>
+          </article>
+          <article class="instrument-plate" style="--provider:#9db89a;--med:92%;--p95:100%" aria-label="GPT-4o Preview: first audio median 759 milliseconds, p95 825 milliseconds.">
+            <header><span><i></i>GPT-4O PREVIEW</span><em>5 RUNS</em></header>
+            <div class="plate-metrics"><div class="emphasis"><small>FIRST AUDIO</small><strong>759 <i>ms</i></strong></div><div><small>FIRST TOKEN</small><strong>649 <i>ms</i></strong></div><div><small>COMPLETE</small><strong>2409 <i>ms</i></strong></div></div>
+            <div class="percentile"><span class="median"></span><span class="p95"></span></div><footer><span>● MED 759 ms</span><span>○ P95 825 ms</span></footer>
+          </article>
+        </div>
+      </section>
+
+      <section class="lab-zone" aria-labelledby="history-title">
+        <div class="zone-header"><span>03</span><h2 id="history-title">HISTORY</h2><small>FIRST AUDIO OVER RUNS</small></div>
+        <div class="history-card">
+          <button class="history-row" type="button" data-values="438,472,401,515,446" aria-expanded="false"><strong style="--provider:#f4f6fa">2.1</strong><svg viewBox="0 0 180 28" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg><output>446</output><span class="history-values" hidden>438 · 472 · 401 · 515 · 446 MS</span></button>
+          <button class="history-row" type="button" data-values="552,603,577,641,589" aria-expanded="false"><strong style="--provider:#e8b15a">GA</strong><svg viewBox="0 0 180 28" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg><output>589</output><span class="history-values" hidden>552 · 603 · 577 · 641 · 589 MS</span></button>
+          <button class="history-row" type="button" data-values="714,782,736,825,759" aria-expanded="false"><strong style="--provider:#9db89a">4O</strong><svg viewBox="0 0 180 28" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg><output>759</output><span class="history-values" hidden>714 · 782 · 736 · 825 · 759 MS</span></button>
+        </div>
+      </section>
+
+      <aside class="measurement-note">
+        <span aria-hidden="true">⌖</span>
+        <p>Fixture data only. The shared race begins at detected speech end. First audio marks the provider output event—not physical speaker onset. This web lab makes no measurements, retains nothing, and sends nothing off-device.</p>
+      </aside>
+    </div>
+
+    <div class="run-dock">
+      <div class="model-pills" role="group" aria-label="Latency test model">
+        <button type="button" data-model="realtime21" class="selected">2.1</button><button type="button" data-model="realtimeGA">GA</button><button type="button" data-model="gpt4oRealtimePreview">4O</button>
+      </div>
+      <div class="run-controls">
+        <div class="stepper"><span>RUNS</span><button id="runs-minus" type="button" aria-label="Decrease run count">−</button><output id="run-count" aria-live="polite">5</output><button id="runs-plus" type="button" aria-label="Increase run count">＋</button></div>
+        <button id="run-test" class="run-button" type="button">START 5-RUN TEST</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="announcer" class="sr-only" aria-live="assertive"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>

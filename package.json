@@ -1,0 +1,10 @@
+{
+  "name": "sky-realtime-web-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/smoke.mjs",
+    "serve": "python3 -m http.server 4173 --bind 127.0.0.1"
+  }
+}

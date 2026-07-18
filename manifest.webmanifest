@@ -1,0 +1,20 @@
+{
+  "name": "Sky Realtime · First Light Web Demo",
+  "short_name": "Sky Demo",
+  "description": "A private, zero-credit interactive demo of the Sky First Light voice observatory interface.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "categories": ["entertainment", "utilities"],
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
