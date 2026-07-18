@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/smoke.mjs",
-    "serve": "python3 -m http.server 4173 --bind 127.0.0.1"
+    "test": "node --test tests/live-server.test.mjs && node tests/smoke.mjs",
+    "serve": "python3 -m http.server 4173 --bind 127.0.0.1",
+    "serve:live": "node live-server.mjs"
   }
 }

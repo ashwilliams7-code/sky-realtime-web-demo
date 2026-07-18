@@ -1,0 +1,1 @@
+window.__SKY_RUNTIME__ = Object.freeze({ liveVoice: false, model: "visual-demo" });

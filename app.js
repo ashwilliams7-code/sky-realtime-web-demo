@@ -1,7 +1,11 @@
 (() => {
   "use strict";
 
+  const runtime = window.__SKY_RUNTIME__ || { liveVoice: false, model: "visual-demo" };
+  const speechRecognitionAPI = () => window.SpeechRecognition || window.webkitSpeechRecognition;
+
   const models = {
+    localSky: { display: "Sky Local 9B", short: "SKY" },
     realtime21: { display: "Realtime 2.1", short: "2.1" },
     realtimeGA: { display: "Realtime GA", short: "GA" },
     gpt4oRealtimePreview: { display: "GPT-4o Preview", short: "4O" }
@@ -61,7 +65,7 @@
   const state = {
     phase: "idle",
     caption: "Tap Start when you’re ready.",
-    model: "realtime21",
+    model: runtime.liveVoice ? "localSky" : "realtime21",
     voice: "openAIRealtime",
     muted: false,
     protectedTools: false,
@@ -69,7 +73,15 @@
     timers: new Set(),
     interruptedUntil: 0,
     runCount: 5,
-    lastFocus: null
+    lastFocus: null,
+    liveVoice: Boolean(runtime.liveVoice),
+    liveSessionActive: false,
+    recognition: null,
+    recognitionActive: false,
+    speechActive: false,
+    restartingRecognition: false,
+    conversationHistory: [],
+    requestController: null
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -79,6 +91,8 @@
     app: $("#app"),
     conversation: $("#conversation-screen"),
     headerStatus: $("#header-status"),
+    modeStamp: $("#mode-stamp"),
+    privacyCopy: $("#privacy-copy"),
     phaseLabel: $("#phase-label"),
     caption: $("#caption"),
     captionOldest: $("#caption-oldest"),
@@ -100,8 +114,30 @@
     latencyClose: $("#latency-close"),
     announcer: $("#announcer"),
     runCount: $("#run-count"),
-    runTest: $("#run-test")
+    runTest: $("#run-test"),
+    localModelOption: $("#local-model-option"),
+    modeSummaryTitle: $("#mode-summary-title"),
+    modeSummaryCopy: $("#mode-summary-copy"),
+    microphonePrivacyRow: $("#microphone-privacy-row")
   };
+
+  function configureRuntimeUI() {
+    if (!state.liveVoice) return;
+
+    elements.modeStamp.textContent = "LIVE VOICE";
+    elements.modeStamp.classList.add("live");
+    elements.privacyCopy.textContent = "Sky stores no audio or transcripts. Safari may process speech.";
+    elements.modeSummaryTitle.textContent = "Live browser voice + private Sky reasoning";
+    elements.modeSummaryCopy.textContent = "Safari handles speech recognition and playback. Sky’s local model creates the reply. No audio, transcript, or identifier is stored by Sky.";
+    elements.microphonePrivacyRow.innerHTML = '<span aria-hidden="true">—</span> Microphone access starts only after you tap Start';
+    elements.localModelOption.hidden = false;
+    $$("input[name='model']").forEach((input) => {
+      input.checked = input.value === "localSky";
+      input.disabled = input.value !== "localSky";
+    });
+    $("#demo-heading").textContent = "LIVE VOICE TEST";
+    setCaption("Tap Start, then allow microphone access.");
+  }
 
   const excludedCaptions = new Set([
     "",
@@ -179,9 +215,15 @@
     elements.orb.setAttribute("aria-label", orbLabel);
     elements.modelShort.textContent = model.short;
     elements.settingsControl.setAttribute("aria-label", `Model and voice settings, current model ${model.display}`);
-    elements.primary.setAttribute("aria-label", meta.actionLabel);
+    const liveActionLabel = state.phase === "idle" || state.phase === "error"
+      ? "Start live voice session"
+      : state.phase === "speaking" ? "Interrupt Sky" : "End live voice session";
+    const liveActionHint = state.phase === "idle" || state.phase === "error"
+      ? "START VOICE"
+      : state.phase === "speaking" ? "INTERRUPT" : "END VOICE";
+    elements.primary.setAttribute("aria-label", state.liveVoice ? liveActionLabel : meta.actionLabel);
     elements.primaryIcon.innerHTML = icon(meta.icon);
-    elements.primaryHint.textContent = meta.actionHint;
+    elements.primaryHint.textContent = state.liveVoice ? liveActionHint : meta.actionHint;
 
     const micEnabled = ["listening", "thinking", "speaking"].includes(state.phase);
     elements.mic.disabled = !micEnabled;
@@ -193,13 +235,32 @@
     requestOrbDraw();
   }
 
+  function cancelLiveIO() {
+    state.liveSessionActive = false;
+    state.restartingRecognition = false;
+    state.requestController?.abort();
+    state.requestController = null;
+    if (state.recognition) {
+      state.recognition.onend = null;
+      state.recognition.onerror = null;
+      try { state.recognition.abort(); } catch { /* already stopped */ }
+    }
+    state.recognition = null;
+    state.recognitionActive = false;
+    state.speechActive = false;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
+
   function resetDemo(announce = false) {
     clearDemoTimers();
+    if (state.liveVoice) cancelLiveIO();
     state.muted = false;
     state.interruptedUntil = 0;
     state.archivedCaptions = [];
-    setPhase("idle", "Tap Start when you’re ready.", { archive: false });
-    if (announce) elements.announcer.textContent = "Demo reset. Sky is ready.";
+    state.conversationHistory = [];
+    const prompt = state.liveVoice ? "Tap Start, then allow microphone access." : "Tap Start when you’re ready.";
+    setPhase("idle", prompt, { archive: false });
+    if (announce) elements.announcer.textContent = state.liveVoice ? "Voice session ended. Sky is ready." : "Demo reset. Sky is ready.";
   }
 
   function startDemo() {
@@ -227,6 +288,184 @@
     }, 650);
   }
 
+  function createRecognition() {
+    const Recognition = speechRecognitionAPI();
+    if (!Recognition) return null;
+    const recognition = new Recognition();
+    recognition.lang = "en-AU";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      state.recognitionActive = true;
+      state.restartingRecognition = false;
+      if (state.liveSessionActive && !state.muted) setPhase("listening", "I’m listening.");
+    };
+
+    recognition.onresult = (event) => {
+      let combined = "";
+      let finalTranscript = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript?.trim() || "";
+        if (!transcript) continue;
+        combined += `${transcript} `;
+        if (event.results[index].isFinal) finalTranscript += `${transcript} `;
+      }
+      if (combined.trim()) setCaption(combined.trim());
+      if (finalTranscript.trim()) {
+        state.recognitionActive = false;
+        try { recognition.stop(); } catch { /* recognition already ended */ }
+        void handleRecognizedSpeech(finalTranscript.trim());
+      }
+    };
+
+    recognition.onerror = (event) => {
+      state.recognitionActive = false;
+      const error = event.error || "unknown";
+      if (!state.liveSessionActive) return;
+      if (error === "no-speech" || error === "aborted") {
+        if (!state.muted) setPhase("listening", "I didn’t catch that. I’m still listening.");
+        return;
+      }
+      state.liveSessionActive = false;
+      const permissionError = error === "not-allowed" || error === "service-not-allowed";
+      setPhase("error", permissionError
+        ? "Microphone access was blocked. Allow it in Safari, then tap Retry."
+        : "Safari speech recognition is unavailable right now. Tap Retry.");
+    };
+
+    recognition.onend = () => {
+      state.recognitionActive = false;
+      if (state.liveSessionActive && !state.muted && state.phase === "listening" && !state.speechActive) {
+        schedule(beginLiveRecognition, 260);
+      }
+    };
+    return recognition;
+  }
+
+  function beginLiveRecognition() {
+    if (!state.liveSessionActive || state.muted || state.speechActive || state.recognitionActive) return;
+    const recognition = createRecognition();
+    if (!recognition) {
+      state.liveSessionActive = false;
+      setPhase("error", "This browser cannot use live speech recognition. Open this link in Safari on iPhone.");
+      return;
+    }
+    state.recognition = recognition;
+    state.restartingRecognition = true;
+    try {
+      recognition.start();
+    } catch {
+      state.restartingRecognition = false;
+      schedule(beginLiveRecognition, 400);
+    }
+  }
+
+  function startLiveVoiceSession() {
+    clearDemoTimers();
+    cancelLiveIO();
+    state.liveSessionActive = true;
+    state.muted = false;
+    state.interruptedUntil = 0;
+    state.archivedCaptions = [];
+    state.conversationHistory = [];
+    setPhase("connecting", "Requesting microphone access…", { archive: false });
+    beginLiveRecognition();
+  }
+
+  async function handleRecognizedSpeech(transcript) {
+    if (!state.liveSessionActive || !transcript) return;
+    state.recognitionActive = false;
+    state.conversationHistory.push({ role: "user", content: transcript });
+    state.conversationHistory = state.conversationHistory.slice(-8);
+    setCaption(transcript);
+    setPhase("thinking", "Thinking…");
+
+    const controller = new AbortController();
+    state.requestController?.abort();
+    state.requestController = controller;
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: transcript,
+          history: state.conversationHistory.slice(0, -1),
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Sky reply failed with ${response.status}`);
+      const payload = await response.json();
+      const reply = typeof payload.reply === "string" ? payload.reply.trim() : "";
+      if (!reply) throw new Error("Sky returned an empty reply");
+      if (!state.liveSessionActive || state.requestController !== controller) return;
+      state.conversationHistory.push({ role: "assistant", content: reply });
+      state.conversationHistory = state.conversationHistory.slice(-8);
+      speakLiveReply(reply);
+    } catch (error) {
+      if (error?.name === "AbortError" || !state.liveSessionActive) return;
+      state.liveSessionActive = false;
+      setPhase("error", "Sky’s local reasoning service did not answer. Tap Retry.");
+    } finally {
+      if (state.requestController === controller) state.requestController = null;
+    }
+  }
+
+  function preferredSpeechVoice() {
+    if (!("speechSynthesis" in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    return voices.find((voice) => /Karen|Samantha|Daniel|Serena|Moira|Ava|Alex/i.test(voice.name) && /^en/i.test(voice.lang))
+      || voices.find((voice) => /^en-AU/i.test(voice.lang))
+      || voices.find((voice) => /^en/i.test(voice.lang))
+      || null;
+  }
+
+  function speakLiveReply(reply) {
+    if (!("speechSynthesis" in window) || typeof window.SpeechSynthesisUtterance !== "function") {
+      state.liveSessionActive = false;
+      setPhase("error", "This browser cannot play spoken replies.");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new window.SpeechSynthesisUtterance(reply);
+    utterance.lang = "en-AU";
+    utterance.rate = 0.98;
+    utterance.pitch = 0.98;
+    const voice = preferredSpeechVoice();
+    if (voice) utterance.voice = voice;
+
+    state.speechActive = true;
+    setPhase("speaking", reply);
+    utterance.onend = () => {
+      if (!state.speechActive) return;
+      state.speechActive = false;
+      if (!state.liveSessionActive) return;
+      setPhase("listening", "I’m listening.");
+      schedule(beginLiveRecognition, 180);
+    };
+    utterance.onerror = () => {
+      if (!state.speechActive) return;
+      state.speechActive = false;
+      state.liveSessionActive = false;
+      setPhase("error", "Safari could not play Sky’s reply. Tap Retry.");
+    };
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function interruptLiveVoice() {
+    state.speechActive = false;
+    state.requestController?.abort();
+    state.requestController = null;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    state.interruptedUntil = performance.now() + 600;
+    setPhase("listening", "Interrupted. I’m listening.");
+    elements.announcer.textContent = "Sky interrupted. Listening again.";
+    beginLiveRecognition();
+    schedule(() => renderState(), 610);
+  }
+
   function interruptDemo() {
     clearDemoTimers();
     state.interruptedUntil = performance.now() + 600;
@@ -236,6 +475,13 @@
   }
 
   function handlePrimaryAction() {
+    if (state.liveVoice) {
+      if (state.phase === "idle" || state.phase === "error") startLiveVoiceSession();
+      else if (state.phase === "speaking") interruptLiveVoice();
+      else resetDemo(true);
+      return;
+    }
+
     switch (state.phase) {
       case "idle":
       case "error":
@@ -256,6 +502,7 @@
 
   function setModel(modelID) {
     if (!models[modelID] || modelID === state.model) return;
+    if (state.liveVoice && modelID !== "localSky") return;
     const wasActive = state.phase !== "idle";
     state.model = modelID;
     $$("input[name='model']").forEach((input) => { input.checked = input.value === modelID; });
@@ -267,7 +514,19 @@
   function toggleMicrophone() {
     if (elements.mic.disabled) return;
     state.muted = !state.muted;
-    if (state.phase === "listening") {
+    if (state.liveVoice) {
+      if (state.muted) {
+        if (state.recognition) {
+          state.recognition.onend = null;
+          try { state.recognition.stop(); } catch { /* already stopped */ }
+        }
+        state.recognitionActive = false;
+        setCaption("Microphone muted.");
+      } else {
+        setPhase("listening", "I’m listening.");
+        beginLiveRecognition();
+      }
+    } else if (state.phase === "listening") {
       setCaption(state.muted ? "Microphone muted — visual demo only." : "I’m listening.");
     }
     renderState();
@@ -329,8 +588,9 @@
   function previewError() {
     closeSettings(false);
     clearDemoTimers();
+    if (state.liveVoice) cancelLiveIO();
     state.interruptedUntil = 0;
-    setPhase("error", "I couldn’t restore the private demo session.");
+    setPhase("error", state.liveVoice ? "Live voice connection interrupted. Tap Retry." : "I couldn’t restore the private demo session.");
     elements.primary.focus();
   }
 
@@ -357,14 +617,19 @@
   function updateRunCount(delta) {
     state.runCount = Math.min(9, Math.max(1, state.runCount + delta));
     elements.runCount.textContent = String(state.runCount);
-    elements.runTest.textContent = state.phase === "idle" || state.phase === "error"
+    elements.runTest.textContent = state.liveVoice
+      ? "RETURN TO LIVE VOICE"
+      : state.phase === "idle" || state.phase === "error"
       ? `START ${state.runCount}-RUN TEST`
       : "RETURN TO VOICE";
   }
 
   function startFixtureRun() {
     closeLatencyLab(false);
-    if (state.phase === "idle" || state.phase === "error") startDemo();
+    if (state.phase === "idle" || state.phase === "error") {
+      if (state.liveVoice) startLiveVoiceSession();
+      else startDemo();
+    }
     elements.primary.focus();
   }
 
@@ -616,6 +881,7 @@
   reduceMotionQuery.addEventListener?.("change", requestOrbDraw);
   reduceTransparencyQuery.addEventListener?.("change", requestOrbDraw);
 
+  configureRuntimeUI();
   setupHistorySparklines();
   bindEvents();
   renderState();

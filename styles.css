@@ -152,6 +152,10 @@ a:focus-visible {
   font-size: 9px;
   letter-spacing: 0.09em;
 }
+.web-demo-stamp.live {
+  border-color: rgba(157, 184, 154, 0.38);
+  color: var(--sage);
+}
 
 .privacy-note {
   align-self: center;
@@ -225,7 +229,7 @@ a:focus-visible {
 }
 
 .caption-stack {
-  height: 82px;
+  height: 100px;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -246,7 +250,14 @@ a:focus-visible {
   white-space: nowrap;
 }
 .receding-caption.oldest { opacity: 0.28; }
-.receding-caption.recent { opacity: 0.48; }
+.receding-caption.recent {
+  display: -webkit-box;
+  overflow: hidden;
+  opacity: 0.48;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .receding-caption:empty { display: none; }
 
 .caption {
@@ -628,7 +639,7 @@ a:focus-visible {
   .status-header { flex-basis: 38px; min-height: 38px; }
   .privacy-note { min-height: 24px; font-size: 9px; }
   .orb-container { width: clamp(205px, 59vh, 260px); }
-  .caption-stack { height: 70px; }
+  .caption-stack { height: 88px; }
   .latency-handle { flex-basis: 42px; }
   .controls { flex-basis: 82px; }
   .primary-control { width: 66px; height: 66px; }

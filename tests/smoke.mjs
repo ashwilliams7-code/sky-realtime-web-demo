@@ -6,16 +6,18 @@ import path from "node:path";
 import process from "node:process";
 
 const root = path.resolve(import.meta.dirname, "..");
-const requiredFiles = [
+const publicFiles = [
   "index.html",
   "styles.css",
   "app.js",
+  "runtime-config.js",
   "manifest.webmanifest",
   "favicon.svg",
   ".nojekyll",
 ];
+const privateRuntimeFiles = ["live-server.mjs", "tests/live-server.test.mjs"];
 
-for (const relativePath of requiredFiles) {
+for (const relativePath of [...publicFiles, ...privateRuntimeFiles]) {
   const file = await stat(path.join(root, relativePath));
   assert(file.isFile(), `${relativePath} must be a file`);
 }
@@ -34,6 +36,7 @@ const requiredHTML = [
   'id="settings-sheet"',
   'id="latency-lab"',
   'id="latency-close"',
+  'id="mode-stamp"',
   "WEB DEMO",
   "No audio or data leaves this device.",
 ];
@@ -41,7 +44,7 @@ for (const landmark of requiredHTML) {
   assert(html.includes(landmark), `Missing HTML landmark: ${landmark}`);
 }
 
-for (const asset of ["styles.css", "app.js", "manifest.webmanifest", "favicon.svg"]) {
+for (const asset of ["styles.css", "runtime-config.js", "app.js", "manifest.webmanifest", "favicon.svg"]) {
   assert(html.includes(asset), `index.html must reference ${asset}`);
 }
 
@@ -54,10 +57,12 @@ assert(css.includes("env(safe-area-inset-top)"), "Top safe-area handling is requ
 assert(css.includes("env(safe-area-inset-bottom)"), "Bottom safe-area handling is required");
 assert(css.includes("prefers-reduced-motion"), "Reduced-motion fallback is required");
 assert(js.includes("startDemo"), "Deterministic demo flow is required");
-assert(js.includes("interruptDemo"), "Interrupt flow is required");
+assert(js.includes("interruptDemo"), "Demo interrupt flow is required");
+assert(js.includes("startLiveVoiceSession"), "Live voice flow is required");
+assert(js.includes("speechRecognitionAPI"), "Safari speech recognition integration is required");
+assert(js.includes('fetch("/api/chat"'), "Live reasoning must use the same-origin chat route");
 
 const forbiddenRuntimeAPIs = [
-  /\bfetch\s*\(/,
   /\bXMLHttpRequest\b/,
   /\bWebSocket\b/,
   /\bEventSource\b/,
@@ -72,11 +77,12 @@ for (const pattern of forbiddenRuntimeAPIs) {
   assert(!pattern.test(js), `Forbidden runtime API found: ${pattern}`);
 }
 assert(!/https?:\/\//.test(html.replace(/<meta property="og:url"[^>]*>/g, "")), "Public HTML assets must be relative");
+assert(!/fetch\s*\(\s*["']https?:\/\//.test(js), "Browser runtime must not call a remote origin directly");
 
-const syntax = spawnSync(process.execPath, ["--check", path.join(root, "app.js")], {
-  encoding: "utf8",
-});
-assert.equal(syntax.status, 0, syntax.stderr || "app.js syntax check failed");
+for (const script of ["app.js", "runtime-config.js", "live-server.mjs"]) {
+  const check = spawnSync(process.execPath, ["--check", path.join(root, script)], { encoding: "utf8" });
+  assert.equal(check.status, 0, check.stderr || `${script} syntax check failed`);
+}
 
 const port = 41739;
 const server = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
@@ -88,7 +94,7 @@ try {
     once(server.stderr, "data"),
     new Promise((resolve) => setTimeout(resolve, 500)),
   ]);
-  for (const relativePath of requiredFiles.filter((file) => file !== ".nojekyll")) {
+  for (const relativePath of publicFiles.filter((file) => file !== ".nojekyll")) {
     const response = await fetch(`http://127.0.0.1:${port}/${relativePath}`);
     assert.equal(response.status, 200, `${relativePath} must be served successfully`);
     assert((await response.arrayBuffer()).byteLength > 0, `${relativePath} must not be empty`);
