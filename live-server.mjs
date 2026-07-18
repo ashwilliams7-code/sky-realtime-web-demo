@@ -173,7 +173,7 @@ export function createLiveVoiceServer({
               model,
               stream: false,
               think: false,
-              keep_alive: "10m",
+              keep_alive: "2h",
               messages: [
                 { role: "system", content: systemPrompt },
                 ...normalizeHistory(payload.history),
